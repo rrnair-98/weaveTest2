@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"go.uber.org/zap"
 	"net/http"
+	"strconv"
+	"time"
 	"weaveTest/internal/config"
 	appError "weaveTest/internal/server/github/client/errors"
 )
@@ -61,6 +63,18 @@ func performRequest(ctx context.Context, url string, logger *zap.Logger) (*http.
 		}
 	}
 	res, err := client.Do(req)
+	if env.Paginator.RateLimited {
+		rateLimiter := GetRateLimiter()
+		t := res.Header.Get("X-RateLimit-Reset")
+		logger.Debug("updating rate limiter reset time", zap.String("X-RateLimit-Reset", t))
+		seconds, err := strconv.ParseInt(t, 10, 64)
+		if err != nil {
+			return nil, appError.NewInternalError(err, appError.InvalidJSONBody, "failed to parse rate limit reset time")
+		}
+		unixTime := time.Unix(seconds, 0)
+		rateLimiter.UpdateResetTime(unixTime)
+	}
+
 	if err != nil {
 		logger.Error("failed to perform http request: ", zap.Error(err))
 		return nil, appError.NewInternalError(err, appError.InvalidHttpClient, "failed to perform http request")

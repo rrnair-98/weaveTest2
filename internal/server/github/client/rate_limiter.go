@@ -13,17 +13,15 @@ var (
 	rateLimiterMu       sync.RWMutex
 )
 
-// RateLimiter manages API request rate limiting
+// RateLimiter implements a token bucket rate limiter
 type RateLimiter struct {
-	mu           sync.Mutex
-	requestTimes []time.Time
-	maxRequests  int
-	timeWindow   time.Duration
-	requestChan  chan struct{}
-	releaseChan  chan struct{}
-	done         chan struct{}
-	wg           sync.WaitGroup
-	logger       *zap.Logger
+	mu            sync.Mutex
+	maxTokens     int           // Maximum number of tokens in the bucket
+	tokens        int           // Current number of tokens
+	refillRate    time.Duration // How often a token is added
+	lastRefill    time.Time     // When tokens were last refilled
+	nextResetTime time.Time     // When the rate limit will fully reset (from X-RateLimit-Reset)
+	logger        *zap.Logger
 }
 
 // GetRateLimiter returns the singleton instance of the rate limiter
@@ -49,109 +47,113 @@ func InitRateLimiter(maxRequests int, timeWindow time.Duration, logger *zap.Logg
 	})
 }
 
-// newRateLimiter creates a new rate limiter instance
-func newRateLimiter(maxRequests int, timeWindow time.Duration, logger *zap.Logger) *RateLimiter {
-	rl := &RateLimiter{
-		maxRequests:  maxRequests,
-		timeWindow:   timeWindow,
-		requestTimes: make([]time.Time, 0, maxRequests),
-		requestChan:  make(chan struct{}),
-		releaseChan:  make(chan struct{}),
-		done:         make(chan struct{}),
-		logger:       logger,
-	}
+// newRateLimiter creates a new token bucket rate limiter instance
+func newRateLimiter(maxTokens int, timeWindow time.Duration, logger *zap.Logger) *RateLimiter {
+	// Calculate token refill rate (how often a single token is added)
+	refillRate := timeWindow / time.Duration(maxTokens)
 
-	logger.Debug("starting worker goroutine")
-	// Start the worker goroutine
-	rl.wg.Add(1)
-	go rl.worker()
-
-	return rl
-}
-
-// worker processes incoming request tokens and manages the rate limiting
-func (rl *RateLimiter) worker() {
-	defer rl.wg.Done()
-
-	for {
-		select {
-		case <-rl.requestChan:
-			rl.logger.Debug("waiting for chan")
-			delay := rl.calculateDelay()
-			if delay > 0 {
-				time.Sleep(delay)
-			}
-
-			rl.logger.Debug("adding request time: ", zap.Time("time", time.Now()))
-			rl.mu.Lock()
-			now := time.Now()
-			rl.requestTimes = append(rl.requestTimes, now)
-
-			rl.logger.Debug("removing old request times: ", zap.Int("numOldTimes", len(rl.requestTimes)))
-			cutoff := now.Add(-rl.timeWindow)
-			i := 0
-			for i < len(rl.requestTimes) && rl.requestTimes[i].Before(cutoff) {
-				i++
-			}
-			if i > 0 {
-				rl.requestTimes = rl.requestTimes[i:]
-			}
-			rl.mu.Unlock()
-
-			rl.logger.Debug("signalling to chan for routine to start execution")
-			rl.releaseChan <- struct{}{}
-
-		case <-rl.done:
-			return
-		}
+	return &RateLimiter{
+		maxTokens:  maxTokens,
+		tokens:     maxTokens, // Start with a full bucket
+		refillRate: refillRate,
+		lastRefill: time.Now(),
+		logger:     logger,
 	}
 }
 
-// calculateDelay determines how long to wait before allowing the next request
-func (rl *RateLimiter) calculateDelay() time.Duration {
+// refillTokens calculates how many tokens should be added based on time elapsed
+// and adds them to the bucket (up to maxTokens)
+func (rl *RateLimiter) refillTokens() {
+	now := time.Now()
+
+	// If we have a reset time and it has passed, fully refill the bucket
+	if !rl.nextResetTime.IsZero() && now.After(rl.nextResetTime) {
+		rl.tokens = rl.maxTokens
+		rl.lastRefill = now
+		rl.nextResetTime = time.Time{} // Clear the reset time
+		rl.logger.Debug("rate limit reset time reached, bucket fully refilled",
+			zap.Int("tokens", rl.tokens))
+		return
+	}
+
+	// Otherwise calculate tokens to add based on time elapsed
+	elapsed := now.Sub(rl.lastRefill)
+	tokensToAdd := int(elapsed / rl.refillRate)
+
+	if tokensToAdd > 0 {
+		rl.tokens = min(rl.tokens+tokensToAdd, rl.maxTokens)
+		// Update last refill time, but only for the tokens we actually added
+		rl.lastRefill = rl.lastRefill.Add(time.Duration(tokensToAdd) * rl.refillRate)
+		rl.logger.Debug("refilled tokens",
+			zap.Int("added", tokensToAdd),
+			zap.Int("current", rl.tokens))
+	}
+}
+
+// UpdateResetTime updates the rate limiter with information from X-RateLimit-Reset header
+func (rl *RateLimiter) UpdateResetTime(resetTime time.Time) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
-	if len(rl.requestTimes) < rl.maxRequests {
+	rl.nextResetTime = resetTime
+	rl.logger.Debug("updated rate limit reset time", zap.Time("resetTime", resetTime))
+}
+
+// Wait blocks until a token is available
+func (rl *RateLimiter) Wait() {
+	for {
+		waitTime := rl.reserveToken()
+		if waitTime == 0 {
+			return
+		}
+		time.Sleep(waitTime)
+	}
+}
+
+// WaitWithContext blocks until a token is available or context is canceled
+func (rl *RateLimiter) WaitWithContext(ctx context.Context) error {
+	for {
+		waitTime := rl.reserveToken()
+		if waitTime == 0 {
+			return nil
+		}
+
+		select {
+		case <-time.After(waitTime):
+			// Continue the loop to try again
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
+// reserveToken attempts to take a token from the bucket
+// Returns the wait time needed if no token is available (0 if token was taken)
+func (rl *RateLimiter) reserveToken() time.Duration {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	rl.refillTokens()
+
+	if rl.tokens > 0 {
+		rl.tokens--
+		rl.logger.Debug("token consumed", zap.Int("remaining", rl.tokens))
 		return 0
 	}
 
-	// If we've reached the max requests, calculate how long until the oldest
-	// request falls outside the time window
-	oldestAllowed := time.Now().Add(-rl.timeWindow)
-	if rl.requestTimes[0].After(oldestAllowed) {
-		rl.logger.Debug("oldest request is still within the time window, returning diff")
-		// The oldest request is still within the time window
-		return rl.requestTimes[0].Add(rl.timeWindow).Sub(time.Now())
-	}
-	rl.logger.Debug("oldest request is outside the time window, returning 0")
-	return 0
-}
+	// Calculate wait time until next token is available
+	waitTime := rl.refillRate
 
-// Wait blocks until a request can be made according to rate limits
-func (rl *RateLimiter) Wait() {
-	rl.requestChan <- struct{}{}
-	<-rl.releaseChan
-}
-
-// WaitWithContext blocks until a request can be made or context is canceled
-func (rl *RateLimiter) WaitWithContext(ctx context.Context) error {
-	select {
-	case rl.requestChan <- struct{}{}:
-		select {
-		case <-rl.releaseChan:
-			return nil
-		case <-ctx.Done():
-			rl.logger.Debug("draining release chan")
-			// Need to drain the request to avoid leaking it
-			go func() {
-				<-rl.releaseChan
-			}()
-			return ctx.Err()
+	// If we have a reset time and waiting for it is shorter, use that instead
+	if !rl.nextResetTime.IsZero() {
+		resetWait := time.Until(rl.nextResetTime)
+		if resetWait < waitTime {
+			waitTime = resetWait
 		}
-	case <-ctx.Done():
-		return ctx.Err()
 	}
+
+	rl.logger.Debug("no tokens available", zap.Duration("waitTime", waitTime))
+	return waitTime
 }
 
 // ExecuteWithRateLimit executes the given function while respecting rate limits
@@ -164,21 +166,20 @@ func (rl *RateLimiter) ExecuteWithRateLimit(ctx context.Context, fn func() error
 	return fn()
 }
 
-// Close shuts down the rate limiter
-func (rl *RateLimiter) Close() {
-	close(rl.done)
-	rl.wg.Wait()
+// min returns the smaller of two integers
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
-// ShutdownRateLimiter closes the singleton rate limiter instance
+// ShutdownRateLimiter resets the singleton rate limiter instance
 func ShutdownRateLimiter() {
 	rateLimiterMu.Lock()
 	defer rateLimiterMu.Unlock()
 
-	if rateLimiterInstance != nil {
-		rateLimiterInstance.Close()
-		rateLimiterInstance = nil
-	}
+	rateLimiterInstance = nil
 
 	// Reset the once so it can be initialized again if needed
 	rateLimiterOnce = sync.Once{}
