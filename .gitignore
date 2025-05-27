@@ -23,5 +23,6 @@ go.work.sum
 
 # env file
 .env.json
+.env.*
 .idea
 *TODO.md
