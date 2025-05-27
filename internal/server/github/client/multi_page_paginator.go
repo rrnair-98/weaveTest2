@@ -17,20 +17,28 @@ var (
 )
 
 // GetMultiPagePaginator returns the singleton instance of MultiPagePaginator
-func GetMultiPagePaginator() *MultiPagePaginator {
-	return instance
-}
-
-// InitMultiPagePaginator initializes the singleton instance of MultiPagePaginator
-func InitMultiPagePaginator(logger *zap.Logger, requestMaker RequestMaker) {
+func GetMultiPagePaginator(logger *zap.Logger, requestMaker RequestMaker) *MultiPagePaginator {
 	mppOnce.Do(func() {
 		mppMu.Lock()
+		if requestMaker == nil {
+			requestMaker = NewDefaultRequestMaker(logger)
+		}
 		instance = &MultiPagePaginator{
 			logger:       logger,
 			requestMaker: requestMaker,
 		}
 		mppMu.Unlock()
 	})
+	return instance
+}
+
+// InitMultiPagePaginator initializes the singleton instance of MultiPagePaginator
+func InitMultiPagePaginator(logger *zap.Logger, requestMaker RequestMaker) {
+	GetMultiPagePaginator(logger, requestMaker)
+}
+
+func DefaultMultiPagePaginator(logger *zap.Logger) *MultiPagePaginator {
+	return GetMultiPagePaginator(logger, nil)
 }
 
 type MultiPagePaginator struct {
