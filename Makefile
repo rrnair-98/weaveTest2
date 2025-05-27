@@ -21,6 +21,7 @@ proto:
 
 build: proto
 	@echo "building gRPC server..."
+	go mod download
 	go build -o $(SERVER_BIN) cmd/weaveTest/main.go
 	@echo "gRPC server built"
 
