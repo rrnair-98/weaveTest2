@@ -16,9 +16,14 @@ func main() {
 	defer logger.Sync()
 
 	// since we need a logger instance
-	client.InitRateLimiter(10, time.Minute, logger)
-
+	client.InitRateLimiter(9, time.Minute, logger)
 	err = config.InitEnvFromFile("./.env.json")
+	if err != nil {
+		logger.Error("failed to load env file", zap.Error(err))
+		panic(err)
+	}
+	e := config.GetEnv()
+	logger.Debug("paginator conf: ", zap.Bool("rateLimiterEnabled", e.Paginator.RateLimited), zap.String("kind", e.Paginator.Kind), zap.Int("maxPages", e.Paginator.MaxPages), zap.Int("perPage", e.Paginator.PerPage), zap.Bool("fetchAllPages", e.Paginator.FetchAllPages))
 	if err != nil {
 		logger.Error("failed to load env file", zap.Error(err))
 		panic(err)

@@ -6,7 +6,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/status"
 	"net"
-	"weaveTest/internal/config"
 	"weaveTest/internal/proto/generated"
 	"weaveTest/internal/server/github"
 )
@@ -55,8 +54,7 @@ func NewServerWithDefaultPort(logger *zap.Logger) *Server {
 
 func (s *Server) Search(ctx context.Context, in *generated.SearchRequest) (*generated.SearchResponse, error) {
 	s.logger.Debug("beginning search, args: ", zap.Dict("request", zap.String("name", in.SearchTerm), zap.String("user", in.User)))
-	env := config.GetEnv()
-	data, err := github.NewDataFetcher(s.logger, env.GitToken).Fetch(ctx, in)
+	data, err := github.NewDataFetcher(s.logger).Fetch(ctx, in)
 	if err != nil {
 		grpcError := status.Error(err.GrpcStatus(), err.Message())
 		// TODO: check if we can change the proto for descriptive errors

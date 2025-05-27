@@ -15,16 +15,23 @@ var (
 
 type Env struct {
 	GitToken  string     `json:"git_token"`
-	Paginator Pagination `json:"enable_rate_limiter"` // if enabled works across all routines except in pagination
-	Port      string     `json:"port"`                // ignored for now
+	Paginator Pagination `json:"pagination"` // if enabled works across all routines except in pagination
 }
 
 type Pagination struct {
-	Kind          bool `json:"single"`          // either of single or multi, single fetches one page, multi fetches all pages up to max_pages
-	MaxPages      int  `json:"max_pages"`       // if FetchAllPages is false, this is the max number of pages to fetch
-	PerPage       int  `json:"per_page"`        // Entries per page, max of 100
-	FetchAllPages bool `json:"fetch_all_pages"` // if set ignores MaxPages
-	RateLimited   bool `json:"rate_limited"`
+	Kind          string `json:"kind"`            // either of single or multi, single fetches one page, multi fetches all pages up to max_pages
+	MaxPages      int    `json:"max_pages"`       // if FetchAllPages is false, this is the max number of pages to fetch
+	PerPage       int    `json:"per_page"`        // Entries per page, max of 100
+	FetchAllPages bool   `json:"fetch_all_pages"` // if set ignores MaxPages
+	RateLimited   bool   `json:"rate_limited"`    // if set enables the rate limiter
+}
+
+func (p *Pagination) IsSinglePage() bool {
+	return p.Kind == "single"
+}
+
+func (p *Pagination) IsMultiPage() bool {
+	return p.Kind == "multi"
 }
 
 // InitEnvFromFile initializes the singleton Env instance from the given file path.
@@ -40,15 +47,11 @@ func InitEnvFromFile(filePath string) error {
 			loadErr = fmt.Errorf("failed to read config file: %w", err)
 			return
 		}
-
-		// Unmarshal JSON data into temporary Env struct
 		var env Env
 		if err := json.Unmarshal(data, &env); err != nil {
 			loadErr = fmt.Errorf("failed to parse config file: %w", err)
 			return
 		}
-
-		// Set the singleton instance with write lock
 		mu.Lock()
 		instance = &env
 		mu.Unlock()
