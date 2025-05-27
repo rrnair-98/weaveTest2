@@ -4,10 +4,34 @@ import (
 	"context"
 	"go.uber.org/zap"
 	"io"
+	"sync"
 	"weaveTest/internal/config"
 	"weaveTest/internal/proto/generated"
 	appError "weaveTest/internal/server/github/client/errors"
 )
+
+var (
+	instance *MultiPagePaginator
+	mppOnce  sync.Once
+	mppMu    sync.RWMutex
+)
+
+// GetMultiPagePaginator returns the singleton instance of MultiPagePaginator
+func GetMultiPagePaginator() *MultiPagePaginator {
+	return instance
+}
+
+// InitMultiPagePaginator initializes the singleton instance of MultiPagePaginator
+func InitMultiPagePaginator(logger *zap.Logger, requestMaker RequestMaker) {
+	mppOnce.Do(func() {
+		mppMu.Lock()
+		instance = &MultiPagePaginator{
+			logger:       logger,
+			requestMaker: requestMaker,
+		}
+		mppMu.Unlock()
+	})
+}
 
 type MultiPagePaginator struct {
 	logger       *zap.Logger
@@ -52,12 +76,13 @@ func (m *MultiPagePaginator) Paginate(ctx context.Context, request *generated.Se
 
 	// Calculate the total number of pages based on TotalCount
 	totalPages := (totalCount + perPage - 1) / perPage
+	m.logger.Debug("total pages calculated", zap.Int("totalPages", totalPages))
 
-	// Determine the actual number of pages to fetch (minimum of calculated pages or config max)
 	pagesToFetch := totalPages
 	if maxConfigPages > 0 && pagesToFetch > maxConfigPages {
 		pagesToFetch = maxConfigPages
 	}
+	m.logger.Debug("pages to fetch calculated", zap.Int("pagesToFetch", pagesToFetch))
 
 	m.logger.Debug("pagination details",
 		zap.Int("totalCount", totalCount),
