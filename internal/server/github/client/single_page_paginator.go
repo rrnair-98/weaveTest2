@@ -14,6 +14,8 @@ var (
 	sppMu          sync.RWMutex
 )
 
+// SinglePagePaginator is responsible for handling pagination for single-page search requests.
+// It uses a RequestMaker to perform HTTP requests and logs activities using a zap.Logger.
 type SinglePagePaginator struct {
 	logger       *zap.Logger
 	requestMaker RequestMaker
@@ -36,10 +38,12 @@ func GetSinglePagePaginator(logger *zap.Logger, maker RequestMaker) *SinglePageP
 	return singleInstance
 }
 
+// DefaultSinglePagePaginator initializes and returns a default SinglePagePaginator with logger and default RequestMaker.
 func DefaultSinglePagePaginator(logger *zap.Logger) *SinglePagePaginator {
 	return GetSinglePagePaginator(logger, nil)
 }
 
+// Paginate executes a single-page pagination for search requests, fetching and returning search results or an AppError.
 func (s *SinglePagePaginator) Paginate(ctx context.Context, request *generated.SearchRequest) (*generated.SearchResponse, appError.AppError) {
 	queryEscapedUrl, err := genUrl(request, defaultPerPage, defaultPageNumber, s.logger)
 	if err != nil {

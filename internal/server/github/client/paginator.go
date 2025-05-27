@@ -16,10 +16,15 @@ const (
 	bearerFmt  = "Bearer %s"
 )
 
+// Paginator provides functionality for paginating search results based on a given search request and context.
+// It returns a search response or an application-specific error when processing the request.
 type Paginator interface {
 	Paginate(ctx context.Context, request *generated.SearchRequest) (*generated.SearchResponse, appError.AppError)
 }
 
+// genUrl generates a qualified GitHub API search URL based on search request parameters, page size, and page number.
+// It validates the query and constructs the URL with or without a user filter, logging the final URL for debugging.
+// Returns the generated URL or an application error in case of invalid input or query validation failure.
 func genUrl(request *generated.SearchRequest, pageSize int, pageNum int, logger *zap.Logger) (string, appError.AppError) {
 	var query = queryString(request.SearchTerm)
 	qualifiedUrl := ""
@@ -35,6 +40,9 @@ func genUrl(request *generated.SearchRequest, pageSize int, pageNum int, logger 
 	return qualifiedUrl, nil
 }
 
+// fetchDataFromRemote retrieves data from a remote server using the provided RequestMaker and URL.
+// It takes a context for request handling, a logger for error tracking, and returns a SearchResponse or an AppError.
+// This function ensures the response body is read and unmarshalled into a structured format while handling potential errors.
 func fetchDataFromRemote(ctx context.Context, url string, logger *zap.Logger, requestMaker RequestMaker) (*generated.SearchResponse, appError.AppError) {
 	res, err := requestMaker.Perform(ctx, url)
 	if err != nil {
@@ -51,6 +59,9 @@ func fetchDataFromRemote(ctx context.Context, url string, logger *zap.Logger, re
 	return response, err
 }
 
+// handleResponseBodyBytes processes the HTTP response body and status code, logging outcomes and handling errors.
+// It unmarshals the response body into a structured format, transforming repository items to search results.
+// Returns the total count of results, a SearchResponse object, or an AppError in case of failure.
 func handleResponseBodyBytes(body []byte, statusCode int, url string, logger *zap.Logger) (int, *generated.SearchResponse, appError.AppError) {
 	if err := handleHttpErrors(statusCode, body, url, logger); err != nil {
 		return 0, nil, err
@@ -67,6 +78,7 @@ func handleResponseBodyBytes(body []byte, statusCode int, url string, logger *za
 	return response.TotalCount, &generated.SearchResponse{Results: res}, nil
 }
 
+// handleHttpErrors processes HTTP responses and maps specific status codes to detailed, custom error types for logging.
 func handleHttpErrors(statusCode int, body []byte, url string, logger *zap.Logger) appError.AppError {
 	logger.Debug("handling http errors", zap.Int("statusCode", statusCode))
 	if statusCode == http.StatusOK {

@@ -80,6 +80,7 @@ const (
 // q is required and can not be empty. The others are optional and have default values.
 type queryString string
 
+// Validate checks the validity of the query string by verifying it is not empty, complies with operator limits, and length constraints.
 func (q queryString) Validate() error {
 	if err := q.IsEmpty(); err != nil {
 		return err
@@ -93,6 +94,7 @@ func (q queryString) Validate() error {
 	return nil
 }
 
+// IsEmpty checks if the query string is empty and returns an error if it is. It ensures the query string is not blank.
 func (q queryString) IsEmpty() error {
 	if q == "" {
 		return fmt.Errorf("query string cant be empty")
@@ -100,10 +102,8 @@ func (q queryString) IsEmpty() error {
 	return nil
 }
 
-func (q queryString) ToUrl() (string, error) {
-	return q.ToUrlWithMaxPerPage(defaultPageNumber, defaultPerPage)
-}
-
+// ToUrlWithMaxPerPage generates a GitHub API search URL with page and per-page parameters based on the query string.
+// Returns the URL or an error if the query string validation fails. Defaults to predefined values for invalid inputs.
 func (q queryString) ToUrlWithMaxPerPage(pageNumber int, perPage int) (string, error) {
 	if err := q.Validate(); err != nil {
 		return "", err
@@ -117,6 +117,10 @@ func (q queryString) ToUrlWithMaxPerPage(pageNumber int, perPage int) (string, e
 	return fmt.Sprintf(gitUrlFmtWithPageNumberAndPerPage, url.QueryEscape(string(q)), perPage, pageNumber), nil
 }
 
+// ToUrlWithUser generates a GitHub API search URL with the provided user, page number, and results per page.
+// Returns the URL or an error if the query string validation fails.
+// Defaults to predefined values for page number and per page if they are invalid.
+// If no user is provided, the URL is generated without the user filter.
 func (q queryString) ToUrlWithUser(user string, pageNumber int, perPage int) (string, error) {
 	if err := q.Validate(); err != nil {
 		return "", err
@@ -150,6 +154,8 @@ func (q queryString) hasValidNumAndsOrsNots() error {
 	return nil
 }
 
+// satisfiesQueryLenCapacity checks if the query string length exceeds 255 characters after removing specific replacements.
+// Returns an error if the processed query exceeds the allowed length; otherwise, it returns nil.
 func (q queryString) satisfiesQueryLenCapacity() error {
 	// The API ignores this, but it is a good practice to check for it.
 	strippedQuery := strings.NewReplacer(replacementArray...).Replace(string(q))
