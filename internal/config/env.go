@@ -14,9 +14,17 @@ var (
 )
 
 type Env struct {
-	GitToken         string `json:"git_token"`
-	EnablePagination bool   `json:"enable_pagination"`
-	Port             string `json:"port"`
+	GitToken  string     `json:"git_token"`
+	Paginator Pagination `json:"enable_rate_limiter"` // if enabled works across all routines except in pagination
+	Port      string     `json:"port"`                // ignored for now
+}
+
+type Pagination struct {
+	Kind          bool `json:"single"`          // either of single or multi, single fetches one page, multi fetches all pages up to max_pages
+	MaxPages      int  `json:"max_pages"`       // if FetchAllPages is false, this is the max number of pages to fetch
+	PerPage       int  `json:"per_page"`        // Entries per page, max of 100
+	FetchAllPages bool `json:"fetch_all_pages"` // if set ignores MaxPages
+	RateLimited   bool `json:"rate_limited"`
 }
 
 // InitEnvFromFile initializes the singleton Env instance from the given file path.

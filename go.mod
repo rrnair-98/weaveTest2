@@ -5,6 +5,8 @@ go 1.24.1
 require google.golang.org/grpc v1.72.1
 
 require (
+	github.com/gofri/go-github-pagination v1.0.1 // indirect
+	github.com/gofri/go-github-ratelimit/v2 v2.0.2 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/net v0.40.0 // indirect

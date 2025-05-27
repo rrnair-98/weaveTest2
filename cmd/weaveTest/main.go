@@ -2,8 +2,10 @@ package main
 
 import (
 	"go.uber.org/zap"
+	"time"
 	"weaveTest/internal/config"
-	server "weaveTest/internal/server"
+	"weaveTest/internal/server"
+	"weaveTest/internal/server/github/client"
 )
 
 func main() {
@@ -12,6 +14,9 @@ func main() {
 		panic(err)
 	}
 	defer logger.Sync()
+
+	// since we need a logger instance
+	client.InitRateLimiter(10, time.Minute, logger)
 
 	err = config.InitEnvFromFile("./.env.json")
 	if err != nil {

@@ -21,6 +21,7 @@ const (
 	Internal
 	InvalidJSONBody
 	InvalidHttpClient
+	PaginationFailed
 )
 
 var errorKindToGrpcStatusCode = make(map[ErrorKind]codes.Code)
@@ -42,6 +43,7 @@ func initErrorKindMap() {
 	errorKindToGrpcStatusCode[Internal] = codes.Internal
 	errorKindToGrpcStatusCode[InvalidJSONBody] = codes.Internal
 	errorKindToGrpcStatusCode[InvalidHttpClient] = codes.Internal
+	errorKindToGrpcStatusCode[PaginationFailed] = codes.Internal
 }
 
 type InternalError struct {

@@ -1,4 +1,6 @@
-package github
+package client
+
+import "weaveTest/internal/proto/generated"
 
 type CodeSearchResponse struct {
 	TotalCount        int              `json:"total_count"`
@@ -13,6 +15,17 @@ type RepositoryItem struct {
 	HTMLURL string     `json:"html_url"`
 	Score   float64    `json:"score"`
 	Repo    Repository `json:"repository"`
+}
+
+func RepositoryItemsToResult(repoItems []RepositoryItem) []*generated.Result {
+	var results = make([]*generated.Result, len(repoItems))
+	for _, item := range repoItems {
+		results = append(results, &generated.Result{
+			FileUrl: item.HTMLURL,
+			Repo:    item.Repo.HTMLURL,
+		})
+	}
+	return results
 }
 
 type Repository struct {

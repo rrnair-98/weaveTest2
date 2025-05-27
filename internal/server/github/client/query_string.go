@@ -1,4 +1,4 @@
-package github
+package client
 
 import (
 	"fmt"
@@ -61,9 +61,11 @@ var allowedKeywords = []string{
 }
 
 const (
-	gitUrlFmt           = "https://api.github.com/search/code?q=%s"
-	userQueryStringFmt  = "https://api.github.com/search/code?q=%s+%s"
-	userQueryDefaultFmt = "user:%s"
+	userQueryStringFmt                = "https://api.github.com/search/code?q=%s+%s&per_page=%d&page=%d"
+	userQueryDefaultFmt               = "user:%s"
+	gitUrlFmtWithPageNumberAndPerPage = "https://api.github.com/search/code?q=%s&per_page=%d&page=%d"
+	defaultPerPage                    = 30
+	defaultPageNumber                 = 1
 )
 
 // queryString is a wrapper around a string that represents a query string for github code search API.
@@ -99,21 +101,37 @@ func (q queryString) IsEmpty() error {
 }
 
 func (q queryString) ToUrl() (string, error) {
-	if err := q.Validate(); err != nil {
-		return "", err
-	}
-	return fmt.Sprintf(gitUrlFmt, url.QueryEscape(string(q))), nil
+	return q.ToUrlWithMaxPerPage(defaultPageNumber, defaultPerPage)
 }
 
-func (q queryString) ToUrlWithUser(user string) (string, error) {
+func (q queryString) ToUrlWithMaxPerPage(pageNumber int, perPage int) (string, error) {
 	if err := q.Validate(); err != nil {
 		return "", err
 	}
+	if pageNumber <= 0 {
+		pageNumber = defaultPageNumber
+	}
+	if perPage <= 0 || perPage > 100 {
+		perPage = defaultPerPage
+	}
+	return fmt.Sprintf(gitUrlFmtWithPageNumberAndPerPage, url.QueryEscape(string(q)), perPage, pageNumber), nil
+}
+
+func (q queryString) ToUrlWithUser(user string, pageNumber int, perPage int) (string, error) {
+	if err := q.Validate(); err != nil {
+		return "", err
+	}
+	if pageNumber <= 0 {
+		pageNumber = defaultPageNumber
+	}
+	if perPage <= 0 || perPage > 100 {
+		perPage = defaultPerPage
+	}
 	if user == "" {
-		return fmt.Sprintf(gitUrlFmt, url.QueryEscape(string(q))), nil
+		return fmt.Sprintf(gitUrlFmtWithPageNumberAndPerPage, url.QueryEscape(string(q)), perPage, pageNumber), nil
 	}
 	userStr := fmt.Sprintf(userQueryDefaultFmt, user)
-	return fmt.Sprintf(userQueryStringFmt, url.QueryEscape(string(q)), url.QueryEscape(userStr)), nil
+	return fmt.Sprintf(userQueryStringFmt, url.QueryEscape(string(q)), url.QueryEscape(userStr), perPage, pageNumber), nil
 }
 
 // hasValidNumAndsOrsNots checks if the query string contains more than 5 boolean operators (AND, OR, NOT).
@@ -126,7 +144,6 @@ func (q queryString) hasValidNumAndsOrsNots() error {
 	orCount := strings.Count(queryStr, " OR ")
 	notCount := strings.Count(queryStr, " NOT ")
 	totalOperators := andCount + orCount + notCount
-	fmt.Printf("totalOperators: %d\n", totalOperators)
 	if totalOperators > 5 {
 		return fmt.Errorf("query string contains %d boolean operators (AND, OR, NOT), exceeding the maximum of 5", totalOperators)
 	}
